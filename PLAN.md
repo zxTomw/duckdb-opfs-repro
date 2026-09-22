@@ -8,8 +8,9 @@ Build and verify a minimal Vite + TypeScript application that reproduces the beh
 The reproduction must demonstrate:
 
 1. A DuckDB database persists across page reloads and browser restarts using OPFS.
-2. A remote Parquet file is fetched once and materialized into a persistent local DuckDB table.
-3. Subsequent queries use the local table without fetching the source Parquet file again.
+2. A remote Parquet file is materialized into a persistent local DuckDB table, with
+   network behavior recorded for both the first and repeated import statements.
+3. Subsequent local-table queries work without fetching the source Parquet file again.
 4. An aggregation can be written to an OPFS Parquet file.
 5. The cached Parquet file survives reloads and produces the same result as recomputing the aggregation from the local table.
 
@@ -26,7 +27,7 @@ Reference:
 - Preserve `pnpm-lock.yaml`.
 - Use `opfs://analytics.duckdb` as the database path.
 - Use `opfs: { fileHandling: 'auto' }`.
-- Run the app consistently at `http://localhost:5173`.
+- Run the app consistently at `http://localhost:5174`, matching the published results.
 - Do not add React or another UI framework.
 - Do not add backend or server-side database code.
 - Do not assume an expected row count for the source dataset. Record the actual result.
@@ -509,13 +510,13 @@ Fix all type and build errors.
 Then start the app with:
 
 ```bash
-pnpm dev --host localhost --port 5173 --strictPort
+pnpm dev --host localhost --port 5174 --strictPort
 ```
 
 Use exactly:
 
 ```text
-http://localhost:5173
+http://localhost:5174
 ```
 
 Do not alternate between `localhost`, `127.0.0.1`, or different ports because OPFS is scoped by origin.
