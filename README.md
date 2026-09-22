@@ -14,7 +14,8 @@ It does not insert rows, import data, or write the cache during page initializat
 - A current browser with OPFS support (Chromium is recommended for DevTools evidence)
 - Node.js `^20.19.0` or `>=22.12.0` for the installed Vite version
 - pnpm
-- The exact origin `http://localhost:5173`
+- One fixed localhost origin for the entire experiment. The published results used
+  `http://localhost:5174`.
 
 DuckDB-Wasm is intentionally pinned to `1.32.0`. Do not update it while reproducing
 these results without treating that as a separate experiment.
@@ -25,11 +26,12 @@ these results without treating that as a separate experiment.
 pnpm install
 pnpm exec tsc --noEmit
 pnpm build
-pnpm dev --host localhost --port 5173 --strictPort
+pnpm dev --host localhost --port 5174 --strictPort
 ```
 
-Open <http://localhost:5173>. OPFS is scoped to the complete origin, so changing the
-host name or port creates a different storage area.
+Open <http://localhost:5174>. OPFS is scoped to the complete origin, so changing the
+host name or port creates a different storage area. Another fixed port is valid for a
+fresh run, but it will not expose the OPFS state recorded in `RESULTS.md`.
 
 ## Exact manual reproduction
 
