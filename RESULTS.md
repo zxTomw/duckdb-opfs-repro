@@ -67,6 +67,10 @@ last_order_date (Arrow epoch ms): 902016000000
 total_price: 2127396830.0200024
 ```
 
+The source column type was not recorded separately. Before interpreting the
+floating-point tail in `total_price`, a follow-up run should capture `DESCRIBE orders`
+and `typeof(o_totalprice)`.
+
 ### Network evidence
 
 | Phase | Request count | Method/status | Range / Content-Range | Transferred bytes | Cache provenance |
@@ -140,22 +144,40 @@ analytics.duckdb.wal — file — 150 bytes
 
 ## Errors and unexpected behavior
 
-No unexpected application errors were observed during the completed static,
-persistence, import, cache-write, reload, cache-read, comparison, listing, reset,
-process-restart, source-blocking, or clean-close operations. After reset, the expected
-`orders`-missing and cache-missing errors were observed and recorded; the latter
-occurred before DuckDB SQL execution and did not create an empty cache artifact. The
-blocked deliberate re-import produced the expected XHR network error.
+No unexpected application errors were observed during the final clean-origin run on
+`localhost:5174`. That run completed the static, persistence, import, cache-write,
+reload, cache-read, comparison, listing, reset, process-restart, source-blocking, and
+clean-close checks. After reset, the expected `orders`-missing and cache-missing errors
+were observed and recorded; the latter occurred before DuckDB SQL execution and did
+not create an empty cache artifact. The blocked deliberate re-import produced the
+expected XHR network error.
 
 An earlier attempt to reuse the previously exercised `localhost:5173` profile state
 reported `TransactionContext Error: Failed to commit: File is not opened in write
 mode`. The native-Chrome completion run therefore used the clean, same-profile origin
-`localhost:5174`; all persistence and full-process-restart checks passed there. This
-was treated as stale test-state contamination rather than an application failure.
+`localhost:5174`; all persistence and full-process-restart checks passed there. The
+root cause of the `localhost:5173` failure was not established; stale OPFS state or a
+retained file handle are possible explanations, not confirmed diagnoses.
 
 The Vite development server emitted non-fatal warnings that DuckDB-Wasm's bundled
 worker source map refers to Apache Arrow source files outside the npm package. These
 warnings did not affect TypeScript checking, the production build, or browser behavior.
+
+## Differences from the blog
+
+| Blog description | Observed in this reproduction | Consequence |
+| --- | --- | --- |
+| The SF0.01 source is described as about 1,500 rows | The materialized table contained 15,000 rows | Record the actual dataset result; do not use the blog's approximate count as an assertion |
+| The remote Parquet read is described as using HTTP range requests | Chrome recorded `HEAD 200` followed by a full `GET 200`, with no `Range` header or `206` response | Capture request-level evidence instead of assuming partial reads |
+| A subsequent `CREATE TABLE IF NOT EXISTS` is described as avoiding another source request | The repeated statement issued one source `HEAD`; with the source host blocked, that statement failed | Treat rerunning the import statement separately from querying the already materialized local table |
+| The persisted table and OPFS cache should serve local work after materialization | Local-table queries and cache reads succeeded while the source host was blocked | Source independence was confirmed for local queries and cache reads, not for the repeated import statement |
+
+## Not tested
+
+- Exporting `analytics.duckdb` from OPFS and opening it with native DuckDB.
+- Browsers other than the recorded Chrome version.
+- Concurrent multi-tab access and crash-recovery behavior.
+- A dedicated schema/type check explaining the `total_price` floating-point tail.
 
 ## Deviations from the official example
 
