@@ -126,3 +126,27 @@ file handling, SQL, and persistence behavior are otherwise the same experiment.
 
 Measured outcomes belong in [`RESULTS.md`](./RESULTS.md). Never replace an unperformed
 step with an expected value; use `NOT TESTED`.
+
+## NFCorpus search in DuckDB-Wasm
+
+This separate experiment uses the full 3,633-document [BEIR NFCorpus](https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip). The checked-in [`public/nfcorpus.jsonl`](./public/nfcorpus.jsonl) contains each document's original ID and its title followed by a space and its text. The preparation step does not tokenize or stem it. To reproduce the file from an extracted BEIR download, run:
+
+```bash
+python3 scripts/prepare_nfcorpus.py --source /path/to/nfcorpus
+```
+
+Omit `--source` to download the official archive. The script uses only the Python standard library, verifies 3,633 unique nonempty IDs, verifies NFCorpus query `PLAIN-3074`, and prints input and output SHA-256 hashes. It can also accept the ZIP file as `--source`.
+
+Use one fixed origin throughout a persistence test. The run in [`RESULTS-NFCORPUS.md`](./RESULTS-NFCORPUS.md) used `http://127.0.0.1:5175`; for example:
+
+```bash
+pnpm install
+pnpm build
+pnpm dev --host 127.0.0.1 --port 5175 --strictPort
+```
+
+Open <http://127.0.0.1:5175>, click **Initialize DuckDB**, **Verify FTS**, **Load corpus**, **Build index**, then **Search**. The prefilled query is `How to Help Prevent Abdominal Aortic Aneurysms` (`PLAIN-3074`). **Inspect NFCorpus state** shows document and distinct-ID counts and whether the generated FTS schema exists. The operation log records durations and results. DuckDB-Wasm uses its browser worker and persists the database at `opfs://analytics.duckdb`. The application fetches the same-origin JSONL once, registers its bytes with DuckDB-Wasm, and bulk-imports it with DuckDB's JSON reader. Search is a prepared DuckDB query; there is no retrieval server endpoint.
+
+The FTS extension is installed and loaded with `INSTALL fts; LOAD fts;` in each browser session. Index creation uses `PRAGMA create_fts_index('nfcorpus', 'id', 'contents', stemmer = 'porter', stopwords = 'english', strip_accents = 1, lower = 1, overwrite = 0)`. DuckDB's documented default `ignore = '(\.|[^a-z])+'` is not overridden. Search uses `fts_main_nfcorpus.match_bm25(id, ?, k := 0.9, b := 0.4, conjunctive := 0)`, orders by descending score and then ID, and returns ten matches. DuckDB handles text analysis inside its FTS extension. This differs from QuackIR's Pyserini/Lucene preprocessing, so exact QuackIR ranking parity is not expected.
+
+To investigate persistence, click **Close DuckDB** (which checkpoints, closes the connection, and terminates the worker), reload at the exact same origin, initialize, inspect, and search before touching **Load corpus** or **Build index**. Then repeat after a full browser quit and restart. To investigate browser-only retrieval, keep DevTools Network open, block `/nfcorpus.jsonl` after the initial import, and try changed queries; record extension asset requests separately. Existing OPFS demo actions share the same database; **Reset demo storage** removes it and therefore removes NFCorpus too. Report measured outcomes in [`RESULTS-NFCORPUS.md`](./RESULTS-NFCORPUS.md).

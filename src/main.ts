@@ -17,6 +17,14 @@ import {
   resetDemoStorage,
   writeMonthlyAggregation,
 } from './experiments'
+import {
+  buildNFCorpusIndex,
+  EXAMPLE_QUERY,
+  inspectNFCorpus,
+  loadNFCorpus,
+  searchNFCorpus,
+  verifyFTS,
+} from './nfcorpus'
 
 type ActionName =
   | 'initialize'
@@ -30,6 +38,11 @@ type ActionName =
   | 'check-files'
   | 'close'
   | 'reset'
+  | 'verify-fts'
+  | 'load-nfcorpus'
+  | 'build-nfcorpus-index'
+  | 'inspect-nfcorpus'
+  | 'search-nfcorpus'
 
 interface ActionDefinition {
   label: string
@@ -92,6 +105,20 @@ app.innerHTML = `
       </div>
 
       <div class="action-group utilities">
+        <h3>4 · NFCorpus full-text search</h3>
+        <p class="hint">Run these in order. Search runs inside the DuckDB-Wasm worker.</p>
+        <div class="button-grid">
+          <button data-action="verify-fts">Verify FTS</button>
+          <button data-action="load-nfcorpus">Load corpus</button>
+          <button data-action="build-nfcorpus-index">Build index</button>
+          <button data-action="inspect-nfcorpus">Inspect NFCorpus state</button>
+        </div>
+        <label for="nfcorpus-query">NFCorpus query</label>
+        <input id="nfcorpus-query" type="search" value="${EXAMPLE_QUERY}" />
+        <button data-action="search-nfcorpus">Search</button>
+      </div>
+
+      <div class="action-group utilities">
         <h3>Utilities</h3>
         <div class="button-grid">
           <button data-action="check-files">Check OPFS files</button>
@@ -133,6 +160,7 @@ const log = document.querySelector<HTMLOListElement>('#log')!
 const buttons = Array.from(
   document.querySelectorAll<HTMLButtonElement>('button[data-action]'),
 )
+const nfcorpusQuery = document.querySelector<HTMLInputElement>('#nfcorpus-query')!
 
 let busy = false
 let resolvedEnvironment: Awaited<ReturnType<typeof initializeDuckDB>> | null = null
@@ -284,6 +312,31 @@ const actions: Record<ActionName, ActionDefinition> = {
       renderEnvironment()
       return reset
     },
+  },
+  'verify-fts': {
+    label: 'Verify FTS',
+    needsDatabase: true,
+    run: verifyFTS,
+  },
+  'load-nfcorpus': {
+    label: 'Load NFCorpus',
+    needsDatabase: true,
+    run: loadNFCorpus,
+  },
+  'build-nfcorpus-index': {
+    label: 'Build NFCorpus index',
+    needsDatabase: true,
+    run: buildNFCorpusIndex,
+  },
+  'inspect-nfcorpus': {
+    label: 'Inspect NFCorpus state',
+    needsDatabase: true,
+    run: inspectNFCorpus,
+  },
+  'search-nfcorpus': {
+    label: 'Search NFCorpus',
+    needsDatabase: true,
+    run: () => searchNFCorpus(nfcorpusQuery.value),
   },
 }
 

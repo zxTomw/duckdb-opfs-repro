@@ -106,6 +106,13 @@ export function getDuckDBConnection(): duckdb.AsyncDuckDBConnection {
   return session.connection
 }
 
+export function getDuckDB(): duckdb.AsyncDuckDB {
+  if (!session) {
+    throw new Error('DuckDB is not initialized. Run “Initialize DuckDB” first.')
+  }
+  return session.db
+}
+
 export function isDuckDBInitialized(): boolean {
   return session !== null
 }
