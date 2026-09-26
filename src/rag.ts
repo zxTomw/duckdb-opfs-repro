@@ -161,6 +161,23 @@ export function finalAnswer(generated: string, sourceCount: number): string {
   if (answer === 'The retrieved excerpts do not provide enough evidence to answer this question.') {
     return answer
   }
+  const answerWithoutRefusal = answer
+    .replace(/\s*The retrieved excerpts do not provide enough evidence to answer this question\.?/gi, '')
+    .trim()
+  if (answerWithoutRefusal && answerWithoutRefusal !== answer) {
+    return finalAnswer(answerWithoutRefusal, sourceCount)
+  }
+  if (sourceCount === 1) {
+    const normalized = answer
+      .replace(/\[(?:\d+|source\s+\d+)\]/gi, '')
+      .replace(/【\s*\d+\s*】/g, '')
+      .replace(/\bsource\s+\d+\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([.,!?])/g, '$1')
+      .trim()
+    const parts = normalized.split(/(?<=[.!?])\s+|\n+/).map((part) => part.trim()).filter(Boolean)
+    if (parts.length > 0) return parts.map((part) => `${part} [1]`).join(' ')
+  }
   const sentences = answer.split(/(?<=[.!?])\s+(?=[A-Z])/)
   if (sentences.some((sentence) => {
     const citations = [...sentence.matchAll(/\[(\d+)\]/g)]
@@ -168,10 +185,6 @@ export function finalAnswer(generated: string, sourceCount: number): string {
       Number(match[1]) < 1 || Number(match[1]) > sourceCount
     )
   })) {
-    // MiniCPM occasionally follows the evidence-only instruction but omits
-    // the requested marker. With one retrieved excerpt, the only possible
-    // source is unambiguous, so preserve the answer and attach that source.
-    if (sourceCount === 1 && !answer.includes('[')) return `${answer} [1]`
     return 'The model did not return a cited answer. Review the retrieved sources below.'
   }
   return answer
