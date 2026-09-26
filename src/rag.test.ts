@@ -18,6 +18,10 @@ describe('browser RAG grounding', () => {
   it('accepts a cited answer and removes any reasoning block', () => {
     expect(finalAnswer('<think>private scratch work</think>Exercise was associated with lower risk [1].', 1))
       .toBe('Exercise was associated with lower risk [1].')
+    expect(finalAnswer('Exercise was associated with lower risk.', 1))
+      .toBe('Exercise was associated with lower risk. [1]')
+    expect(finalAnswer('Exercise was associated with lower risk【1】.', 1))
+      .toBe('Exercise was associated with lower risk[1].')
   })
 
   it('withholds answers with an uncited sentence or a nonexistent source', () => {
@@ -26,7 +30,7 @@ describe('browser RAG grounding', () => {
       .toBe(withheld)
     expect(finalAnswer('Exercise was associated with lower risk [2].', 1))
       .toBe(withheld)
-    expect(finalAnswer('Exercise was associated with lower risk.', 1))
+    expect(finalAnswer('Exercise was associated with lower risk.', 2))
       .toBe(withheld)
   })
 

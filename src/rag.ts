@@ -153,7 +153,10 @@ export function finalAnswer(generated: string, sourceCount: number): string {
     .replace(/<(think|analysis)>[\s\S]*?<\/\1>/gi, '')
     .replace(/<(think|analysis)>[\s\S]*$/gi, '')
     .replace(/^[\s\S]*?<\/(think|analysis)>/gi, '')
-  const answer = withoutReasoning.trim()
+  const answer = withoutReasoning
+    .replace(/【\s*(\d+)\s*】/g, '[$1]')
+    .replace(/\bsource\s+(\d+)\b/gi, '[$1]')
+    .trim()
   if (!answer) return 'The model returned no final answer. Review the retrieved sources below.'
   if (answer === 'The retrieved excerpts do not provide enough evidence to answer this question.') {
     return answer
@@ -165,6 +168,10 @@ export function finalAnswer(generated: string, sourceCount: number): string {
       Number(match[1]) < 1 || Number(match[1]) > sourceCount
     )
   })) {
+    // MiniCPM occasionally follows the evidence-only instruction but omits
+    // the requested marker. With one retrieved excerpt, the only possible
+    // source is unambiguous, so preserve the answer and attach that source.
+    if (sourceCount === 1 && !answer.includes('[')) return `${answer} [1]`
     return 'The model did not return a cited answer. Review the retrieved sources below.'
   }
   return answer
