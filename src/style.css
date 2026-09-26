@@ -121,6 +121,17 @@ dd { overflow-wrap: anywhere; margin: 0; font-family: ui-monospace, SFMono-Regul
 .hint { margin-bottom: 24px; color: var(--muted); }
 .action-group { padding: 19px 0; border-top: 1px solid var(--border); }
 .action-group:last-child { padding-bottom: 0; }
+.rag-controls { margin-top: 24px; }
+.rag-controls .hint { margin-bottom: 12px; line-height: 1.5; }
+.llm-status { margin: 12px 0 0; color: var(--muted); font-size: 0.85rem; }
+.rag-panel[hidden] { display: none; }
+.rag-answer { white-space: pre-wrap; line-height: 1.6; }
+.rag-answer p { margin-bottom: 24px; }
+.rag-answer a { color: var(--accent); }
+.rag-sources { display: grid; gap: 14px; padding-left: 24px; }
+.rag-sources li { scroll-margin-top: 24px; }
+.rag-sources strong { color: #e9eef5; font-size: 0.9rem; }
+.rag-sources p { margin: 7px 0 0; color: #b8c3d1; font-size: 0.85rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .button-grid {
   display: grid;

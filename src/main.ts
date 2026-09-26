@@ -22,9 +22,18 @@ import {
   EXAMPLE_QUERY,
   inspectNFCorpus,
   loadNFCorpus,
+  retrieveNFCorpus,
   searchNFCorpus,
   verifyFTS,
 } from './nfcorpus'
+import {
+  cancelLLM,
+  generateGroundedAnswer,
+  isLLMReady,
+  loadLLM,
+  MODEL_ID,
+  type RAGResult,
+} from './rag'
 
 type ActionName =
   | 'initialize'
@@ -116,6 +125,15 @@ app.innerHTML = `
         <label for="nfcorpus-query">NFCorpus query</label>
         <input id="nfcorpus-query" type="search" value="${EXAMPLE_QUERY}" />
         <button data-action="search-nfcorpus">Search</button>
+        <div class="rag-controls">
+          <p class="hint">Optional browser RAG: load ${MODEL_ID} on demand (about 1.83 GB on first use), then ask the same query. Requires WebGPU with shader-f16. Search above remains available without the model.</p>
+          <div class="button-grid">
+            <button id="load-llm">Load LLM</button>
+            <button id="ask-llm">Ask with LLM</button>
+            <button id="cancel-llm">Cancel LLM operation</button>
+          </div>
+          <p id="llm-status" class="llm-status" role="status" aria-live="polite">LLM not loaded.</p>
+        </div>
       </div>
 
       <div class="action-group utilities">
@@ -126,6 +144,14 @@ app.innerHTML = `
           <button class="danger" data-action="reset">Reset demo storage</button>
         </div>
       </div>
+    </section>
+
+    <section id="rag-panel" class="panel rag-panel" aria-labelledby="rag-title" hidden>
+      <p class="section-kicker">NFCorpus RAG</p>
+      <h2 id="rag-title">Grounded answer</h2>
+      <div id="rag-answer" class="rag-answer"></div>
+      <h3>Retrieved sources</h3>
+      <ol id="rag-sources" class="rag-sources"></ol>
     </section>
 
     <section class="panel output-panel" aria-labelledby="result-title">
@@ -161,8 +187,17 @@ const buttons = Array.from(
   document.querySelectorAll<HTMLButtonElement>('button[data-action]'),
 )
 const nfcorpusQuery = document.querySelector<HTMLInputElement>('#nfcorpus-query')!
+const loadLLMButton = document.querySelector<HTMLButtonElement>('#load-llm')!
+const askLLMButton = document.querySelector<HTMLButtonElement>('#ask-llm')!
+const cancelLLMButton = document.querySelector<HTMLButtonElement>('#cancel-llm')!
+const llmStatus = document.querySelector<HTMLParagraphElement>('#llm-status')!
+const ragPanel = document.querySelector<HTMLElement>('#rag-panel')!
+const ragAnswer = document.querySelector<HTMLDivElement>('#rag-answer')!
+const ragSources = document.querySelector<HTMLOListElement>('#rag-sources')!
 
 let busy = false
+let llmBusy = false
+let llmRunToken = 0
 let resolvedEnvironment: Awaited<ReturnType<typeof initializeDuckDB>> | null = null
 
 function formatJson(value: unknown): string {
@@ -208,11 +243,15 @@ function updateButtons(): void {
     const action = button.dataset.action as ActionName
     const definition = actions[action]
     button.disabled =
-      busy ||
+      busy || llmBusy ||
       (definition.needsDatabase && !isDuckDBInitialized()) ||
       (action === 'initialize' && isDuckDBInitialized()) ||
       (action === 'close' && !isDuckDBInitialized())
   }
+  loadLLMButton.disabled = busy || llmBusy || isLLMReady()
+  askLLMButton.disabled = busy || llmBusy || !isDuckDBInitialized() || !isLLMReady()
+  cancelLLMButton.disabled = !llmBusy
+  nfcorpusQuery.disabled = busy || llmBusy
 }
 
 function errorDetails(error: unknown): { name: string; message: string; stack?: string } {
@@ -383,6 +422,102 @@ async function runAction(actionName: ActionName): Promise<void> {
     updateButtons()
   }
 }
+
+function renderRAGResult(result: RAGResult): void {
+  const answer = document.createElement('p')
+  for (const part of result.answer.split(/(\[\d+\])/g)) {
+    const match = /^\[(\d+)\]$/.exec(part)
+    const number = match ? Number(match[1]) : 0
+    if (number >= 1 && number <= result.sources.length) {
+      const link = document.createElement('a')
+      link.href = `#rag-source-${number}`
+      link.textContent = part
+      answer.append(link)
+    } else {
+      answer.append(document.createTextNode(part))
+    }
+  }
+  ragAnswer.replaceChildren(answer)
+
+  const items = result.sources.map((source) => {
+    const item = document.createElement('li')
+    item.id = `rag-source-${source.number}`
+    const heading = document.createElement('strong')
+    heading.textContent = `[${source.number}] ${source.id} · BM25 ${source.score.toFixed(3)}`
+    const excerpt = document.createElement('p')
+    excerpt.textContent = source.excerpt
+    item.append(heading, excerpt)
+    return item
+  })
+  ragSources.replaceChildren(...items)
+  ragPanel.hidden = false
+}
+
+async function runLLMOperation(
+  label: string,
+  operation: (token: number) => Promise<unknown>,
+): Promise<void> {
+  const started = performance.now()
+  const token = ++llmRunToken
+  llmBusy = true
+  llmStatus.textContent = `${label}…`
+  updateButtons()
+  try {
+    const result = await operation(token)
+    if (token !== llmRunToken) throw new DOMException('Cancelled.', 'AbortError')
+    const durationMs = performance.now() - started
+    resultOutput.textContent = formatJson(result)
+    durationOutput.textContent = `${durationMs.toFixed(1)} ms`
+    addLogEntry(label, 'PASS', durationMs, result)
+    llmStatus.textContent = `${label} complete. Model ready.`
+  } catch (error) {
+    const durationMs = performance.now() - started
+    const cancelled = token !== llmRunToken ||
+      (error instanceof DOMException && error.name === 'AbortError')
+    const details = errorDetails(error)
+    resultOutput.textContent = formatJson(details)
+    durationOutput.textContent = `${durationMs.toFixed(1)} ms`
+    addLogEntry(label, cancelled ? 'CANCELLED' : 'ERROR', durationMs, details)
+    llmStatus.textContent = cancelled
+      ? 'LLM operation cancelled. Load the model again to continue.'
+      : `LLM error: ${details.message}`
+  } finally {
+    llmBusy = false
+    updateButtons()
+  }
+}
+
+loadLLMButton.addEventListener('click', () => {
+  void runLLMOperation('Load LLM', async (token) => {
+    await loadLLM((message) => {
+      if (token === llmRunToken) llmStatus.textContent = message
+    })
+    return { model: MODEL_ID, ready: true }
+  })
+})
+
+askLLMButton.addEventListener('click', () => {
+  void runLLMOperation('Ask NFCorpus with LLM', async (token) => {
+    const query = nfcorpusQuery.value.trim()
+    ragPanel.hidden = true
+    ragAnswer.replaceChildren()
+    ragSources.replaceChildren()
+    llmStatus.textContent = 'Retrieving NFCorpus documents…'
+    const retrieved = await retrieveNFCorpus(query)
+    if (token !== llmRunToken) throw new DOMException('Cancelled.', 'AbortError')
+    llmStatus.textContent = 'Generating an answer from retrieved documents…'
+    const result = await generateGroundedAnswer(retrieved.query, retrieved.hits)
+    if (token !== llmRunToken) throw new DOMException('Cancelled.', 'AbortError')
+    renderRAGResult(result)
+    return result
+  })
+})
+
+cancelLLMButton.addEventListener('click', () => {
+  ++llmRunToken
+  cancelLLM()
+  llmStatus.textContent = 'Cancelling LLM operation…'
+})
 
 for (const button of buttons) {
   button.addEventListener('click', () => {
