@@ -25,6 +25,7 @@ these results without treating that as a separate experiment.
 ```bash
 pnpm install
 pnpm exec tsc --noEmit
+pnpm test
 pnpm build
 pnpm dev --host localhost --port 5174 --strictPort
 ```
@@ -150,3 +151,28 @@ Open <http://127.0.0.1:5175>, click **Initialize DuckDB**, **Verify FTS**, **Loa
 The FTS extension is installed and loaded with `INSTALL fts; LOAD fts;` in each browser session. Index creation uses `PRAGMA create_fts_index('nfcorpus', 'id', 'contents', stemmer = 'porter', stopwords = 'english', strip_accents = 1, lower = 1, overwrite = 0)`. DuckDB's documented default `ignore = '(\.|[^a-z])+'` is not overridden. Search uses `fts_main_nfcorpus.match_bm25(id, ?, k := 0.9, b := 0.4, conjunctive := 0)`, orders by descending score and then ID, and returns ten matches. DuckDB handles text analysis inside its FTS extension. This differs from QuackIR's Pyserini/Lucene preprocessing, so exact QuackIR ranking parity is not expected.
 
 To investigate persistence, click **Close DuckDB** (which checkpoints, closes the connection, and terminates the worker), reload at the exact same origin, initialize, inspect, and search before touching **Load corpus** or **Build index**. Then repeat after a full browser quit and restart. To investigate browser-only retrieval, keep DevTools Network open, block `/nfcorpus.jsonl` after the initial import, and try changed queries; record extension asset requests separately. Existing OPFS demo actions share the same database; **Reset demo storage** removes it and therefore removes NFCorpus too. Report measured outcomes in [`RESULTS-NFCORPUS.md`](./RESULTS-NFCORPUS.md).
+
+## In-browser NFCorpus RAG
+
+The optional **Load LLM** action downloads
+[`Mike0021/MiniCPM5-2B-ONNX`](https://huggingface.co/Mike0021/MiniCPM5-2B-ONNX)
+through Transformers.js and loads its quantized WebGPU model in a separate browser
+worker at revision `04a6c49fcba3a65a0351c92644c3a7e9d4343059`. The first
+download is about 1.83 GB; the browser may cache the files for later visits. Use a
+browser with WebGPU shader-f16 support and enough free memory. The app shows
+download progress and does not load the model during page initialization. If WebGPU
+is unavailable or loading fails, ordinary NFCorpus BM25 search still works.
+
+After **Initialize DuckDB**, **Verify FTS**, **Load corpus**, and **Build index**, click
+**Load LLM** and then **Ask with LLM**. Asking runs the same BM25 ranking in DuckDB,
+passes up to three of the highest scoring documents (at most 1,200 characters each)
+to the local model, and displays its answer with numbered links to the retrieved IDs
+and excerpts. The model must cite at least one of those documents; an answer without
+valid citations is withheld while the sources remain visible.
+The model is instructed to use only those excerpts and say when they do not support
+an answer. The listed sources come from DuckDB rather than model-generated IDs;
+citations still need human review for factual support. **Cancel LLM operation**
+terminates the worker, including an in-progress download or generation. Reload the
+model to ask again after cancellation. No query or document text is sent to an LLM
+server by this feature; model files are fetched from Hugging Face. Model thinking
+is disabled, and any tagged reasoning in a response is withheld from the UI.

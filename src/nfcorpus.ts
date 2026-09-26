@@ -10,6 +10,10 @@ export interface SearchHit {
   score: number
 }
 
+export interface RetrievedDocument extends SearchHit {
+  contents: string
+}
+
 let verifiedWorker: ReturnType<typeof getDuckDB> | null = null
 
 function rowObjects(table: { toArray(): Array<{ toJSON(): unknown }> }): Record<string, unknown>[] {
@@ -152,7 +156,11 @@ export async function buildNFCorpusIndex(): Promise<Record<string, unknown>> {
   return { indexed: true, durationMs: performance.now() - started, ...(await inspectNFCorpus()) }
 }
 
-export async function searchNFCorpus(queryText: string): Promise<{ query: string; hits: SearchHit[]; worker: true }> {
+async function rankNFCorpus(
+  queryText: string,
+  limit: 5 | 10,
+  includeContents: boolean,
+): Promise<{ query: string; rows: Record<string, unknown>[] }> {
   const query = queryText.trim()
   if (!query) throw new Error('Enter a nonempty search query.')
   if (!(await hasCorpus())) throw new Error('Load NFCorpus before searching.')
@@ -160,24 +168,42 @@ export async function searchNFCorpus(queryText: string): Promise<{ query: string
   await verifyFTS()
   const conn = getDuckDBConnection()
   const statement = await conn.prepare(`
-    SELECT id, score
+    SELECT id, ${includeContents ? 'contents, ' : ''}score
     FROM (
-      SELECT id, fts_main_nfcorpus.match_bm25(
+      SELECT id, ${includeContents ? 'contents, ' : ''}fts_main_nfcorpus.match_bm25(
         id, ?, k := 0.9, b := 0.4, conjunctive := 0
       ) AS score FROM nfcorpus
     )
     WHERE score IS NOT NULL
     ORDER BY score DESC, id ASC
-    LIMIT 10;
+    LIMIT ${limit};
   `)
   try {
-    const hits = rowObjects(await statement.query(query)).map((row) => ({
-      id: String(row.id),
-      score: Number(row.score),
-    }))
-    return { query, hits, worker: true }
+    return { query, rows: rowObjects(await statement.query(query)) }
   } finally {
     await statement.close()
+  }
+}
+
+export async function searchNFCorpus(queryText: string): Promise<{ query: string; hits: SearchHit[]; worker: true }> {
+  const { query, rows } = await rankNFCorpus(queryText, 10, false)
+  return {
+    query,
+    hits: rows.map((row) => ({ id: String(row.id), score: Number(row.score) })),
+    worker: true,
+  }
+}
+
+export async function retrieveNFCorpus(queryText: string): Promise<{ query: string; hits: RetrievedDocument[]; worker: true }> {
+  const { query, rows } = await rankNFCorpus(queryText, 5, true)
+  return {
+    query,
+    hits: rows.map((row) => ({
+      id: String(row.id),
+      score: Number(row.score),
+      contents: String(row.contents),
+    })),
+    worker: true,
   }
 }
 
